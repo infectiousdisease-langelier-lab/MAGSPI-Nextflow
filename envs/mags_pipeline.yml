@@ -1,0 +1,25 @@
+name: mags-pipeline
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.11
+  - pandas>=2.0,<3
+  - numpy>=1.24,<2
+  - fastp=0.23.4
+  - bowtie2=2.5.4
+  - samtools=1.20
+  - bbmap=40.02
+  - seqkit=2.8.2
+  - spades=4.0.0
+  - quast=5.2.0
+  - metabat2=2.15
+  - maxbin2=2.2.7
+  - concoct=1.1.0
+  - dastool=1.1.8
+  - diamond=2.1.9
+  - checkm-genome=1.2.3
+  - gtdbtk=2.4.1
+  - drep=3.5.0
+  - instrain=1.6.3

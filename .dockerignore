@@ -1,0 +1,9 @@
+.git
+.github
+.nextflow
+work
+results
+legacy
+*.zip
+*.tar.gz
+.nf-test

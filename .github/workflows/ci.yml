@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  workflow-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Python helpers
+        run: python -m py_compile bin/*.py
+
+      - name: Check JSON schema
+        run: python -m json.tool nextflow_schema.json >/dev/null
+
+      - name: Install Nextflow
+        run: |
+          curl -s https://get.nextflow.io | bash
+          sudo mv nextflow /usr/local/bin/nextflow
+
+      - name: Compile and stub test
+        run: nextflow run . -profile test -stub-run

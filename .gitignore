@@ -1,0 +1,13 @@
+work/
+results/
+.nextflow/
+*.nextflow.log
+.nextflow.log.*
+.DS_Store
+*.swp
+*.swo
+*.pyc
+__pycache__/
+*.fa.gz
+*.fastq.gz
+*.fq.gz

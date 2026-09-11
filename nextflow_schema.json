@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MAGSPI parameters",
+  "type": "object",
+  "properties": {
+    "input": {"type": "string", "description": "CSV samplesheet with sample,fastq_1,fastq_2 columns."},
+    "outdir": {"type": "string", "default": "results"},
+    "host_reference": {"type": ["string", "null"], "default": null},
+    "checkm_db": {"type": ["string", "null"], "default": null},
+    "gtdbtk_db": {"type": ["string", "null"], "default": null},
+    "container_image": {"type": "string"},
+    "run_seqkit": {"type": "boolean"},
+    "run_quast": {"type": "boolean"},
+    "run_checkm": {"type": "boolean"},
+    "run_taxonomy": {"type": "boolean"},
+    "run_dereplication": {"type": "boolean"},
+    "run_instrain": {"type": "boolean"},
+    "run_instrain_compare": {"type": "boolean"},
+    "completeness": {"type": "number", "minimum": 0, "maximum": 100},
+    "contamination": {"type": "number", "minimum": 0, "maximum": 100},
+    "drep_ani": {"type": "number", "minimum": 0, "maximum": 1},
+    "metabat_min_contig": {"type": "integer", "minimum": 1},
+    "concoct_chunk": {"type": "integer", "minimum": 1},
+    "assembly_memory_gb": {"type": "integer", "minimum": 1},
+    "instrain_breadth": {"type": "number", "minimum": 0, "maximum": 1},
+    "instrain_coverage": {"type": "number", "minimum": 0}
+  },
+  "required": ["input"]
+}

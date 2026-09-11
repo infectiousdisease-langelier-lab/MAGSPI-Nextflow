@@ -1,0 +1,22 @@
+# Example run configuration
+input: /path/to/samplesheet.csv
+outdir: results
+container_image: magspi:0.2.0
+host_reference: /path/to/host.fa
+checkm_db: /path/to/checkm_db
+gtdbtk_db: /path/to/gtdbtk_db
+run_seqkit: true
+run_quast: true
+run_checkm: true
+run_taxonomy: true
+run_dereplication: true
+run_instrain: false
+run_instrain_compare: false
+completeness: 50
+contamination: 10
+drep_ani: 0.97
+metabat_min_contig: 1500
+concoct_chunk: 10000
+assembly_memory_gb: 128
+instrain_breadth: 0.5
+instrain_coverage: 1.0
