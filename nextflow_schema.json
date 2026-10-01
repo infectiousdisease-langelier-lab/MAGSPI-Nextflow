@@ -1,29 +1,395 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "MAGSPI parameters",
-  "type": "object",
-  "properties": {
-    "input": {"type": "string", "description": "CSV samplesheet with sample,fastq_1,fastq_2 columns."},
-    "outdir": {"type": "string", "default": "results"},
-    "host_reference": {"type": ["string", "null"], "default": null},
-    "checkm_db": {"type": ["string", "null"], "default": null},
-    "gtdbtk_db": {"type": ["string", "null"], "default": null},
-    "container_image": {"type": "string"},
-    "run_seqkit": {"type": "boolean"},
-    "run_quast": {"type": "boolean"},
-    "run_checkm": {"type": "boolean"},
-    "run_taxonomy": {"type": "boolean"},
-    "run_dereplication": {"type": "boolean"},
-    "run_instrain": {"type": "boolean"},
-    "run_instrain_compare": {"type": "boolean"},
-    "completeness": {"type": "number", "minimum": 0, "maximum": 100},
-    "contamination": {"type": "number", "minimum": 0, "maximum": 100},
-    "drep_ani": {"type": "number", "minimum": 0, "maximum": 1},
-    "metabat_min_contig": {"type": "integer", "minimum": 1},
-    "concoct_chunk": {"type": "integer", "minimum": 1},
-    "assembly_memory_gb": {"type": "integer", "minimum": 1},
-    "instrain_breadth": {"type": "number", "minimum": 0, "maximum": 1},
-    "instrain_coverage": {"type": "number", "minimum": 0}
-  },
-  "required": ["input"]
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/infectiousdisease-langelier-lab/MAGSPI/master/nextflow_schema.json",
+    "title": "MAGSPI pipeline parameters",
+    "description": "MAG-based Strain Profiling and Identification from shotgun metagenomic sequencing",
+    "type": "object",
+    "$defs": {
+        "input_output_options": {
+            "title": "Input / output",
+            "type": "object",
+            "description": "",
+            "properties": {
+                "input": {
+                    "type": "string",
+                    "description": "Path to a comma-separated samplesheet with the header 'sample,fastq_1,fastq_2'. Relative FASTQ paths are resolved against the samplesheet's directory.",
+                    "format": "file-path"
+                },
+                "outdir": {
+                    "type": "string",
+                    "default": "./results",
+                    "description": "Output directory for published results.",
+                    "format": "directory-path"
+                },
+                "publish_dir_mode": {
+                    "type": "string",
+                    "default": "copy",
+                    "description": "How published files are placed in --outdir.",
+                    "enum": [
+                        "copy",
+                        "symlink",
+                        "link",
+                        "rellink",
+                        "copyNoFollow",
+                        "move"
+                    ]
+                },
+                "email": {
+                    "type": "string",
+                    "description": "Contact address recorded with the run (not sent anywhere by the pipeline)."
+                },
+                "multiqc_config": {
+                    "type": "string",
+                    "description": "Custom MultiQC configuration YAML.",
+                    "format": "file-path"
+                }
+            },
+            "required": [
+                "input",
+                "outdir"
+            ]
+        },
+        "host_depletion_options": {
+            "title": "Host depletion",
+            "type": "object",
+            "description": "",
+            "properties": {
+                "host_bowtie2_index": {
+                    "type": "string",
+                    "description": "Directory containing a bowtie2 index of the host genome, or the index path prefix.",
+                    "format": "path"
+                },
+                "host_fasta": {
+                    "type": "string",
+                    "description": "Host genome FASTA. The bowtie2 index is built by the pipeline. Mutually exclusive with --host_bowtie2_index.",
+                    "format": "file-path"
+                },
+                "skip_host_depletion": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Assemble the fastp output directly, without host depletion."
+                }
+            }
+        },
+        "read_qc_options": {
+            "title": "fastp",
+            "type": "object",
+            "description": "",
+            "properties": {
+                "fastp_args": {
+                    "type": "string",
+                    "default": "-c --detect_adapter_for_pe -e 20 -l 50 -3",
+                    "description": "Extra arguments passed to fastp. Default reproduces 01_slurm_fastp.sh."
+                }
+            }
+        },
+        "assembly_options": {
+            "title": "Assembly",
+            "type": "object",
+            "description": "",
+            "properties": {
+                "spades_args": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Extra arguments passed to metaspades.py ('--meta' is always added)."
+                },
+                "skip_quast": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip assembly QC."
+                }
+            }
+        },
+        "binning_options": {
+            "title": "Binning",
+            "type": "object",
+            "description": "",
+            "properties": {
+                "metabat2_min_contig": {
+                    "type": "integer",
+                    "default": 1500,
+                    "description": "MetaBAT2 minimum contig length (-m)."
+                },
+                "concoct_chunk_size": {
+                    "type": "integer",
+                    "default": 10000,
+                    "description": "CONCOCT contig chunk size for cut_up_fasta.py (-c)."
+                },
+                "concoct_overlap": {
+                    "type": "integer",
+                    "default": 0,
+                    "description": "CONCOCT chunk overlap for cut_up_fasta.py (-o)."
+                },
+                "dastool_search_engine": {
+                    "type": "string",
+                    "default": "diamond",
+                    "description": "DAS Tool search engine.",
+                    "enum": [
+                        "diamond",
+                        "blast",
+                        "usearch"
+                    ]
+                },
+                "dastool_args": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Extra arguments passed to DAS_Tool."
+                },
+                "skip_maxbin2": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Exclude MaxBin2 from the binner set."
+                },
+                "skip_concoct": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Exclude CONCOCT from the binner set."
+                }
+            }
+        },
+        "mag_quality_options": {
+            "title": "MAG quality",
+            "type": "object",
+            "description": "",
+            "properties": {
+                "checkm_db": {
+                    "type": "string",
+                    "description": "CheckM data directory (exported as CHECKM_DATA_PATH). Required unless --skip_checkm.",
+                    "format": "directory-path"
+                },
+                "skip_checkm": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip CheckM quality assessment."
+                },
+                "checkm_on": {
+                    "type": "string",
+                    "default": "dastool",
+                    "description": "Bin set CheckM evaluates: the DAS Tool output, or the raw MetaBAT2 bins as script 18 did.",
+                    "enum": [
+                        "dastool",
+                        "metabat2"
+                    ]
+                },
+                "min_completeness": {
+                    "type": "integer",
+                    "default": 50,
+                    "description": "Minimum CheckM completeness (%) for the filtered MAG table and for dRep -comp."
+                },
+                "max_contamination": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Maximum CheckM contamination (%) for the filtered MAG table and for dRep -con."
+                }
+            }
+        },
+        "taxonomy_options": {
+            "title": "Taxonomy",
+            "type": "object",
+            "description": "",
+            "properties": {
+                "gtdbtk_db": {
+                    "type": "string",
+                    "description": "GTDB-Tk release directory (exported as GTDBTK_DATA_PATH). Required unless --skip_gtdbtk.",
+                    "format": "directory-path"
+                },
+                "skip_gtdbtk": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip taxonomic classification."
+                },
+                "gtdbtk_args": {
+                    "type": "string",
+                    "default": "--skip_ani_screen",
+                    "description": "Extra arguments passed to gtdbtk classify_wf."
+                },
+                "gtdbtk_pplacer_scratch": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Run pplacer with --scratch_dir to reduce peak memory."
+                }
+            }
+        },
+        "dereplication_options": {
+            "title": "Dereplication",
+            "type": "object",
+            "description": "",
+            "properties": {
+                "drep_ani": {
+                    "type": "number",
+                    "default": 0.97,
+                    "description": "dRep secondary clustering ANI threshold (-sa)."
+                },
+                "drep_args": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Extra arguments passed to dRep dereplicate."
+                },
+                "skip_drep": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Profile against the full, non-dereplicated MAG set."
+                }
+            }
+        },
+        "strain_profiling_options": {
+            "title": "Strain profiling",
+            "type": "object",
+            "description": "",
+            "properties": {
+                "skip_instrain": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Stop after MAG curation; no strain profiling."
+                },
+                "skip_instrain_compare": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Run inStrain profile and detection, but not the per-MAG comparisons."
+                },
+                "bowtie2_mag_args": {
+                    "type": "string",
+                    "default": "--very-sensitive-local",
+                    "description": "Extra bowtie2 arguments when mapping reads to the MAG catalogue."
+                },
+                "instrain_profile_args": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Extra arguments passed to inStrain profile."
+                },
+                "instrain_compare_args": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Extra arguments passed to inStrain compare."
+                },
+                "instrain_breadth_thresh": {
+                    "type": "number",
+                    "default": 0.5,
+                    "description": "Minimum MAG breadth for a detection call."
+                },
+                "instrain_cov_thresh": {
+                    "type": "number",
+                    "default": 1.0,
+                    "description": "Minimum MAG coverage for a detection call."
+                }
+            }
+        },
+        "stage_control_options": {
+            "title": "Stage control",
+            "type": "object",
+            "description": "",
+            "properties": {
+                "stop_after": {
+                    "type": "string",
+                    "default": "all",
+                    "description": "Last stage to run. 'binners' runs MetaBAT2/MaxBin2/CONCOCT but stops before DAS Tool.",
+                    "enum": [
+                        "read_prep",
+                        "assembly",
+                        "binners",
+                        "binning",
+                        "mags",
+                        "all"
+                    ]
+                }
+            }
+        },
+        "reporting_options": {
+            "title": "Reporting",
+            "type": "object",
+            "description": "",
+            "properties": {
+                "skip_multiqc": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip the MultiQC report."
+                }
+            }
+        },
+        "resource_options": {
+            "title": "Resource ceilings",
+            "type": "object",
+            "description": "",
+            "properties": {
+                "max_cpus": {
+                    "type": "integer",
+                    "default": 64,
+                    "description": "Upper bound on CPUs requested by any single task."
+                },
+                "max_memory": {
+                    "type": "string",
+                    "default": "512.GB",
+                    "description": "Upper bound on memory requested by any single task."
+                },
+                "max_time": {
+                    "type": "string",
+                    "default": "72.h",
+                    "description": "Upper bound on walltime requested by any single task."
+                }
+            }
+        },
+        "generic_options": {
+            "title": "Misc",
+            "type": "object",
+            "description": "",
+            "properties": {
+                "validate_params": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Validate parameters before the run starts."
+                },
+                "monochrome_logs": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Disable coloured log output."
+                },
+                "help": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Print the parameter summary and exit."
+                }
+            }
+        }
+    },
+    "allOf": [
+        {
+            "$ref": "#/$defs/input_output_options"
+        },
+        {
+            "$ref": "#/$defs/host_depletion_options"
+        },
+        {
+            "$ref": "#/$defs/read_qc_options"
+        },
+        {
+            "$ref": "#/$defs/assembly_options"
+        },
+        {
+            "$ref": "#/$defs/binning_options"
+        },
+        {
+            "$ref": "#/$defs/mag_quality_options"
+        },
+        {
+            "$ref": "#/$defs/taxonomy_options"
+        },
+        {
+            "$ref": "#/$defs/dereplication_options"
+        },
+        {
+            "$ref": "#/$defs/strain_profiling_options"
+        },
+        {
+            "$ref": "#/$defs/stage_control_options"
+        },
+        {
+            "$ref": "#/$defs/reporting_options"
+        },
+        {
+            "$ref": "#/$defs/resource_options"
+        },
+        {
+            "$ref": "#/$defs/generic_options"
+        }
+    ]
 }

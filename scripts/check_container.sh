@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="${1:-magspi:0.2.0}"
+IMAGE="${1:-magspi:$(cat VERSION)}"
 
 docker run --rm "${IMAGE}" bash -lc '
   set -euo pipefail

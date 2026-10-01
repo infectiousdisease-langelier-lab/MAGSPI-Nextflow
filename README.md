@@ -1,388 +1,134 @@
-# MAGSPI
+# MAGSPI (Nextflow)
 
-**MAGSPI** is a modular Nextflow workflow for recovering, evaluating, dereplicating, taxonomically classifying, and profiling metagenome-assembled genomes (MAGs) from paired-end shotgun metagenomic sequencing data.
+**MAG-based Strain Profiling and Identification** — a Nextflow DSL2
+implementation of the MAGSPI workflow for recovering, evaluating,
+dereplicating, classifying and strain-profiling metagenome-assembled genomes
+(MAGs) from shotgun metagenomic sequencing.
 
-MAGSPI was refactored from a project-specific collection of SLURM scripts into a portable workflow with:
-
-- Nextflow DSL2 modules
-- container-first execution with Docker or Apptainer
-- optional Conda fallback
-- SLURM/HPC support
-- resumable execution with `-resume`
-- centralized configuration
-- samplesheet-based inputs
-- automatic execution reports, traces, and timelines
-- optional downstream taxonomy, dereplication, and inStrain analyses
-
-> **Status:** generalized release candidate. Validate the full workflow on a representative dataset before using results for publication.
-
-## Workflow
-
-```text
-Paired FASTQ
-   |
-   v
- fastp ----------------------------- Read QC
-   |
-   +---- optional host depletion ---- Bowtie2 + SAMtools
-   |
-   v
- Read repair / normalization -------- BBMap
-   |
-   +---- SeqKit --------------------- Read statistics
-   |
-   v
- metaSPAdes ------------------------- Assembly
-   |
-   +---- QUAST ---------------------- Assembly QC
-   |
-   v
- Read-to-contig mapping ------------ Bowtie2 + SAMtools
-   |
-   v
- Shared BAM/depth
-   |
-   +---------+---------+
-   |         |         |
- MetaBAT2 MaxBin2  CONCOCT
-   |         |         |
-   +---------+---------+
-             |
-             v
-          DAS Tool ------------------ Bin integration
-             |
-             v
-         MAG candidates
-             |
-             v
-           CheckM ------------------ Quality filtering
-             |
-       +-----+----------+
-       |                |
-       v                v
-    GTDB-Tk             dRep -------- Dereplication
-    (optional)            |
-                          v
-                   MAG reference/index
-                          |
-                          v
-                       inStrain
-                          |
-               +----------+----------+
-               |                     |
-               v                     v
-        MAG detection          strain comparison
+```
+raw paired-end FASTQ
+   → fastp QC
+   → bowtie2/samtools host depletion
+   → BBMap read repair
+   → seqkit read statistics
+   → metaSPAdes assembly  → QUAST
+   → MetaBAT2 + MaxBin2 + CONCOCT binning
+   → DAS Tool bin refinement
+   → CheckM quality assessment
+   → MAG standardisation → GTDB-Tk taxonomy
+   → dRep dereplication
+   → MAG catalogue / .stb / scaffold maps
+   → inStrain profile → sample × MAG detection
+   → per-MAG inStrain compare
 ```
 
-A key refactoring is that each sample is mapped back to its own assembly **once**. The resulting BAM/depth information is shared by MetaBAT2, MaxBin2, and CONCOCT rather than recomputed independently.
+This replaces the collection of SLURM scripts in `src/`: one command runs the
+whole workflow, every step is containerised, and `-resume` restarts from the
+last successful task instead of from a hand-edited stage number.
+`docs/port_map.md` maps every original script to its process and lists the
+defects fixed along the way.
 
-## Requirements
-
-### Required
-
-- Nextflow 25.10+ recommended
-- Docker **or** Apptainer/Singularity
-- a Linux environment
-- paired-end FASTQ files
-
-### Optional external resources
-
-- host FASTA for host depletion
-- CheckM database
-- GTDB-Tk database
-
-Large biological databases are deliberately **not** stored in the Git repository or Docker image. They should be installed once on the analysis system and passed to MAGSPI as paths.
-
-## Installation
-
-Clone the repository:
+## Quick start
 
 ```bash
-git clone https://github.com/YOUR-ORG/MAGSPI.git
-cd MAGSPI
-```
-
-Build the MAGSPI container:
-
-```bash
-./scripts/build_container.sh
-```
-
-Check that the expected command-line tools are present:
-
-```bash
-./scripts/check_container.sh
-```
-
-For a public release, publish the image to a registry such as GHCR and set `--container_image` to that immutable release tag or digest. The default local image is `magspi:0.2.0`.
-
-## Input samplesheet
-
-MAGSPI accepts a CSV samplesheet with exactly these required columns:
-
-```csv
+# 1. a samplesheet
+cat > samplesheet.csv <<'CSV'
 sample,fastq_1,fastq_2
-SAMPLE_001,/data/SAMPLE_001_R1.fastq.gz,/data/SAMPLE_001_R2.fastq.gz
-SAMPLE_002,/data/SAMPLE_002_R1.fastq.gz,/data/SAMPLE_002_R2.fastq.gz
+p23220_A,/data/p23220_A_R1_combined.fastq.gz,/data/p23220_A_R2_combined.fastq.gz
+p23220_B,/data/p23220_B_R1_combined.fastq.gz,/data/p23220_B_R2_combined.fastq.gz
+CSV
+
+# 2. run it
+nextflow run infectiousdisease-langelier-lab/MAGSPI \
+    -profile apptainer,slurm \
+    --input samplesheet.csv \
+    --outdir results \
+    --host_bowtie2_index /ref/bowtie2/hg38 \
+    --checkm_db /ref/CheckM_db \
+    --gtdbtk_db /ref/GTDB_Tk_db/release226 \
+    -process.queue your_partition
 ```
 
-Relative FASTQ paths are resolved relative to the samplesheet.
+`--help` prints the parameter summary. See `docs/usage.md` for the full list,
+database setup and HPC guidance, and `docs/output.md` for the result layout.
 
-Sample IDs must be unique and may contain only letters, numbers, `.`, `_`, and `-`.
+## Inputs
 
-## Running MAGSPI
+A CSV samplesheet with the header `sample,fastq_1,fastq_2`. One row per
+sample; paired-end reads are required. Relative paths are resolved against the
+directory holding the samplesheet, so a samplesheet and its FASTQ files can be
+moved together. Sample IDs must be unique and restricted to letters, digits,
+`.`, `_` and `-`; they are used verbatim in output filenames and MAG IDs, which
+removes the per-script `basename | sed` sample-name derivation of the script
+version.
 
-### Local + Docker
+## Execution profiles
 
-```bash
-nextflow run . \\
-  -profile docker \\
-  --input examples/samplesheet.csv \\
-  --checkm_db /path/to/checkm_db \\
-  --gtdbtk_db /path/to/gtdbtk_db \\
-  --host_reference /path/to/host.fa \\
-  --outdir results
-```
+| Profile | Effect |
+|---|---|
+| `docker` | run every process in its pinned container |
+| `apptainer` / `singularity` | same images, pulled as SIF (set `NXF_APPTAINER_CACHEDIR` to a shared path) |
+| `conda` / `mamba` / `micromamba` | build a conda environment per process instead of using containers |
+| `slurm` | submit each task as a SLURM job (combine with a container profile) |
+| `arm` | add to `docker` on Apple silicon to run the x86-64 images under emulation |
+| `test` | three-sample simulated mini-metagenome (see below) |
+| `test_stub` | run every process's stub — no tools, containers or databases needed |
 
-### SLURM + Apptainer
+Profiles compose: `-profile apptainer,slurm`.
 
-```bash
-nextflow run . \\
-  -profile slurm,apptainer \\
-  --input examples/samplesheet.csv \\
-  --checkm_db /path/to/checkm_db \\
-  --gtdbtk_db /path/to/gtdbtk_db \\
-  --host_reference /path/to/host.fa \\
-  --outdir results
-```
+## Databases
 
-The biological software itself does not need to be installed on the host when using the container profiles.
+| Stage | Parameter | Notes |
+|---|---|---|
+| CheckM | `--checkm_db` | `CHECKM_DATA_PATH` directory (~1.4 GB). Skip with `--skip_checkm`. |
+| GTDB-Tk | `--gtdbtk_db` | `GTDBTK_DATA_PATH` release directory (~110 GB for R226). Skip with `--skip_gtdbtk`. |
+| host | `--host_bowtie2_index` or `--host_fasta` | index directory/prefix, or a FASTA the pipeline indexes itself. Skip with `--skip_host_depletion`. |
 
-### Resume an interrupted run
+DAS Tool's DIAMOND database is built inside its container; no external copy is
+needed.
 
-```bash
-nextflow run . <same options> -resume
-```
+## Key parameters
 
-Successful processes are reused from the Nextflow work directory instead of being recomputed.
+Defaults reproduce the thresholds hard-coded in the original scripts:
 
-## Optional stages
+| Parameter | Default | Original source |
+|---|---|---|
+| `--fastp_args` | `-c --detect_adapter_for_pe -e 20 -l 50 -3` | `01_slurm_fastp.sh` |
+| `--metabat2_min_contig` | `1500` | `13_slurm_metabat.sh` |
+| `--concoct_chunk_size` | `10000` | `15_slurm_concoct.sh` |
+| `--dastool_search_engine` | `diamond` | `17_slurm_dastool.sh` |
+| `--min_completeness` | `50` | `19_combine_checkm.sh`, `23_slurm_drep.sh` |
+| `--max_contamination` | `10` | `19_combine_checkm.sh`, `23_slurm_drep.sh` |
+| `--drep_ani` | `0.97` | `23_slurm_drep.sh` (`-sa 0.97`) |
+| `--instrain_breadth_thresh` | `0.5` | `30_aggregate_instrain_detection.py` |
+| `--instrain_cov_thresh` | `1.0` | `30_aggregate_instrain_detection.py` |
 
-Skip host depletion by omitting `--host_reference`.
-
-Skip SeqKit statistics:
-
-```bash
---run_seqkit false
-```
-
-Skip QUAST:
-
-```bash
---run_quast false
-```
-
-Skip CheckM:
-
-```bash
---run_checkm false
-```
-
-Skip GTDB-Tk:
-
-```bash
---run_taxonomy false
-```
-
-Skip dereplication:
-
-```bash
---run_dereplication false
-```
-
-Enable inStrain profiling:
-
-```bash
---run_instrain true
-```
-
-Enable the optional strain-comparison branch:
-
-```bash
---run_instrain true --run_instrain_compare true
-```
-
-## Main parameters
-
-| Parameter | Default | Description |
-|---|---:|---|
-| `input` | required | CSV samplesheet |
-| `outdir` | `results` | Output directory |
-| `container_image` | `magspi:0.2.0` | Docker/Apptainer image |
-| `host_reference` | none | Host FASTA; enables host depletion |
-| `checkm_db` | none | CheckM database root |
-| `gtdbtk_db` | none | GTDB-Tk database root |
-| `run_seqkit` | `true` | Run read statistics |
-| `run_quast` | `true` | Run assembly QC |
-| `run_checkm` | `true` | Run MAG quality filtering |
-| `run_taxonomy` | `true` | Run GTDB-Tk |
-| `run_dereplication` | `true` | Run dRep |
-| `run_instrain` | `false` | Run inStrain profiling |
-| `run_instrain_compare` | `false` | Run inStrain comparisons |
-| `completeness` | `50` | Minimum MAG completeness (%) |
-| `contamination` | `10` | Maximum MAG contamination (%) |
-| `drep_ani` | `0.97` | dRep secondary ANI threshold |
-| `metabat_min_contig` | `1500` | Minimum MetaBAT2 contig length |
-| `concoct_chunk` | `10000` | CONCOCT cut-up chunk length |
-| `assembly_memory_gb` | `128` | Memory passed to metaSPAdes |
-| `instrain_breadth` | `0.5` | MAG breadth detection threshold |
-| `instrain_coverage` | `1.0` | MAG coverage detection threshold |
-
-Full parameter metadata are also provided in `nextflow_schema.json`.
-
-## Output structure
-
-```text
-results/
-├── 01_fastp/
-├── 02_host_depletion/
-├── 02_read_preparation/
-├── 03_read_stats/
-├── 05_assembly/
-├── 06_quast/
-├── 07_mapping/
-├── 08_binning/
-│   ├── metabat2/
-│   ├── maxbin2/
-│   └── concoct/
-├── 09_dastool/
-├── 10_mag_candidates/
-├── 11_checkm/
-├── 12_gtdbtk/
-├── 13_drep/
-├── 14_reference/
-├── 15_instrain/
-└── pipeline_info/
-    ├── execution_trace.tsv
-    ├── execution_report.html
-    └── timeline.html
-```
-
-## Software environment
-
-The production container is built from `envs/mags_pipeline.yml`, which contains the workflow's pinned bioinformatics tools. The same manifest can be used as a Conda fallback:
-
-```bash
-nextflow run . \\
-  -profile slurm,conda \\
-  --input examples/samplesheet.csv
-```
-
-The recommended deployment mode is Docker locally and Apptainer on HPC systems.
-
-## Reference databases
-
-### Host reference
-
-Provide the appropriate host FASTA with:
-
-```bash
---host_reference /path/to/host.fa
-```
-
-MAGSPI builds the Bowtie2 index once and reuses it across samples.
-
-### CheckM
-
-Provide the CheckM database root with:
-
-```bash
---checkm_db /path/to/checkm_db
-```
-
-The database remains outside the container and is mounted read-only during CheckM execution.
-
-### GTDB-Tk
-
-Provide the GTDB-Tk database root with:
-
-```bash
---gtdbtk_db /path/to/gtdbtk_db
-```
-
-The database remains outside the container and is mounted read-only during GTDB-Tk execution.
-
-Record the database/release versions for publication reproducibility.
-
-## Quality filtering and dereplication defaults
-
-The generalized pipeline retains the principal thresholds from the original project workflow:
-
-```text
-MAG completeness >= 50%
-MAG contamination <= 10%
-dRep secondary ANI = 97%
-```
-
-All are configurable from the command line.
-
-## Repository structure
-
-```text
-main.nf                     # top-level DSL2 workflow
-nextflow.config             # execution profiles and resources
-nextflow_schema.json        # parameter schema
-conf/                       # Docker, Apptainer, SLURM, Conda, and test profiles
-modules/local/              # workflow processes
-bin/                        # Python helper utilities
-envs/mags_pipeline.yml      # single fallback Conda environment
-containers/Dockerfile       # production container definition
-scripts/                    # container/build and development helpers
-examples/                   # example input files
-assets/fastq/               # tiny test inputs
-legacy/                     # historical project scripts for provenance
-docs/                       # methods, databases, validation, and refactor notes
-tests/                      # workflow tests
-```
+Stage control: `--skip_maxbin2`, `--skip_concoct`, `--skip_checkm`,
+`--skip_gtdbtk`, `--skip_drep`, `--skip_instrain`,
+`--skip_instrain_compare`, `--skip_quast`, `--skip_multiqc`, and
+`--stop_after read_prep|assembly|binners|binning|mags|all`.
 
 ## Testing
 
-The repository contains a small test profile that exercises the workflow structure without requiring large biological reference databases:
-
 ```bash
-nextflow run . -profile test -stub-run
+# helper-script unit tests (no dependencies)
+python3 tests/test_bin_scripts.py
+
+# whole-DAG smoke test: every process runs its stub
+nextflow run . -profile test_stub -stub-run --outdir results_stub
+
+# real tools on a simulated three-sample mini-metagenome
+python3 tests/make_test_data.py --outdir tests/data
+nextflow run . -profile test,docker --outdir results_test
 ```
 
-Python helper syntax can be checked with:
+`docs/validation.md` records what has been run and verified so far, and what
+still needs a first run on an HPC system with the reference databases in place.
 
-```bash
-make check
-```
+## Citing
 
-Container command availability can be checked with:
-
-```bash
-./scripts/check_container.sh
-```
-
-A full biological end-to-end test with real assembly/binning/database workloads should be run on representative test data before release.
-
-## Error handling and reproducibility
-
-Nextflow manages task scheduling, staging, caching, retries, and resume behavior. MAGSPI is configured to retry likely resource-related failures and terminate immediately on ordinary process errors so that genuine failures are visible rather than silently skipped.
-
-Each execution writes a trace, HTML execution report, and timeline to `results/pipeline_info/`.
-
-## Provenance
-
-The `legacy/original_project_scripts/` directory contains the original scripts from the project from which MAGSPI was generalized. They are retained for provenance and are **not** part of the production execution path.
-
-See `docs/refactor_notes.md` for the major architectural changes and `docs/publication_checklist.md` for validation steps before a publication release.
-
-## Citation
-
-See `CITATIONS.md` for software citations and `docs/methods.md` for a concise methods description.
-
-## License
-
-MIT. See `LICENSE`.
+MAGSPI wraps fastp, Bowtie 2, SAMtools, BBMap, SeqKit, metaSPAdes, QUAST,
+MetaBAT2, MaxBin2, CONCOCT, DAS Tool, DIAMOND, CheckM, GTDB-Tk, dRep and
+inStrain. Please cite the individual tools alongside this repository;
+`results/pipeline_info/software_versions.yml` records the exact versions used
+in a run.
