@@ -1,21 +1,62 @@
 # Reference database setup
 
-MAGSPI keeps large biological reference databases outside the container. This avoids making the software image unnecessarily large and allows users to choose the appropriate reference/database release for their study.
+MAGSPI keeps large reference databases outside the containers: the images stay
+small, and you choose the release appropriate for your study. Record the
+release identifiers alongside the MAGSPI commit for any published analysis.
 
 ## Host reference
 
-Provide a host FASTA file with `--host_reference`. MAGSPI builds the Bowtie2 index automatically during the workflow.
+Either supply a prebuilt bowtie2 index:
 
-## CheckM
+```
+--host_bowtie2_index /ref/bowtie2/hg38      # directory, or the index prefix
+```
 
-Install a CheckM database appropriate for the CheckM version in `envs/mags_pipeline.yml`. Supply the database root with `--checkm_db`.
+or a FASTA, which the pipeline indexes itself (`BOWTIE2_BUILD_HOST`):
 
-The Docker and Apptainer profiles mount the supplied database read-only rather than copying it into each task.
+```
+--host_fasta /ref/hg38.fa
+```
 
-## GTDB-Tk
+Pass exactly one of the two, or `--skip_host_depletion` to assemble the fastp
+output directly. The original scripts used an hg38 index; replace it with the
+appropriate host for non-human samples.
 
-Install the GTDB-Tk reference package appropriate for the GTDB-Tk version in `envs/mags_pipeline.yml`. Supply the database root with `--gtdbtk_db`.
+## CheckM (~1.4 GB)
 
-The Docker and Apptainer profiles mount the supplied database read-only.
+```bash
+mkdir -p /ref/CheckM_db && cd /ref/CheckM_db
+curl -O https://data.ace.uq.edu.au/public/CheckM_databases/checkm_data_2015_01_16.tar.gz
+tar xzf checkm_data_2015_01_16.tar.gz
+```
 
-For reproducibility, record database release/version identifiers alongside the MAGSPI release used for an analysis.
+Then `--checkm_db /ref/CheckM_db`, which the process exports as
+`CHECKM_DATA_PATH`. Skip the stage with `--skip_checkm`.
+
+## GTDB-Tk (~110 GB)
+
+Download the GTDB release that matches the GTDB-Tk version pinned in
+`modules/local/gtdbtk_classifywf.nf` (2.7.2 — see `CITATIONS.md`). Point
+`--gtdbtk_db` at the directory containing `metadata/`; the process derives
+`GTDBTK_DATA_PATH` from it. Skip with `--skip_gtdbtk`.
+
+A GTDB-Tk/database version mismatch is the most common failure at this step —
+check the GTDB-Tk release notes for the supported pairing before a production
+run.
+
+## DAS Tool
+
+No external database. The DIAMOND database DAS Tool needs is built inside its
+container during the run.
+
+## Binding the paths into containers
+
+Under `-profile apptainer` / `-profile singularity`, `autoMounts` covers the
+Nextflow work directory but not databases elsewhere on the filesystem. Add an
+explicit bind in a site config:
+
+```groovy
+apptainer.runOptions = '-B /hpc/reference,/scratch'
+```
+
+See `docs/usage.md` for the full HPC walkthrough.

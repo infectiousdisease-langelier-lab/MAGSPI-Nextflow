@@ -1,0 +1,10 @@
+report_comment: >
+  This report summarises a MAGSPI run (github.com/infectiousdisease-langelier-lab/MAGSPI).
+report_section_order:
+  fastp:
+    order: -1000
+  bowtie2:
+    order: -1100
+  quast:
+    order: -1200
+export_plots: true

@@ -1,0 +1,4 @@
+sample,fastq_1,fastq_2
+stubA,../tests/fixtures/fastq/stubA_R1.fastq.gz,../tests/fixtures/fastq/stubA_R2.fastq.gz
+stubB,../tests/fixtures/fastq/stubB_R1.fastq.gz,../tests/fixtures/fastq/stubB_R2.fastq.gz
+stubC,../tests/fixtures/fastq/stubC_R1.fastq.gz,../tests/fixtures/fastq/stubC_R2.fastq.gz

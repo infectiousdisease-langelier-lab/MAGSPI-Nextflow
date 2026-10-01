@@ -5,21 +5,34 @@ on:
   pull_request:
 
 jobs:
-  workflow-checks:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check Python helpers
-        run: python -m py_compile bin/*.py
+      - name: Compile the Python helpers
+        run: python3 -m py_compile bin/*.py
 
-      - name: Check JSON schema
-        run: python -m json.tool nextflow_schema.json >/dev/null
+      - name: Validate the parameter schema
+        run: python3 -m json.tool nextflow_schema.json > /dev/null
+
+      - name: Repository layout checks
+        run: ./scripts/validate_repo.sh
+
+      - name: Helper-script unit tests
+        run: python3 tests/test_bin_scripts.py
 
       - name: Install Nextflow
         run: |
           curl -s https://get.nextflow.io | bash
           sudo mv nextflow /usr/local/bin/nextflow
 
-      - name: Compile and stub test
-        run: nextflow run . -profile test -stub-run
+      - name: Resolve every profile
+        run: |
+          for p in standard docker apptainer singularity conda slurm test test_stub; do
+            echo "--- $p"
+            nextflow config -profile "$p" . > /dev/null
+          done
+
+      - name: Full-DAG stub run
+        run: nextflow run . -profile test_stub -stub-run --outdir results_stub

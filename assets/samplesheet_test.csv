@@ -1,0 +1,4 @@
+sample,fastq_1,fastq_2
+testA,../tests/data/testA_R1.fastq.gz,../tests/data/testA_R2.fastq.gz
+testB,../tests/data/testB_R1.fastq.gz,../tests/data/testB_R2.fastq.gz
+testC,../tests/data/testC_R1.fastq.gz,../tests/data/testC_R2.fastq.gz
